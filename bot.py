@@ -75,9 +75,9 @@ TOTAL = len(COMMON_QUESTIONS) + 5  # 10
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
-    kb = InlineKeyboardMarkup([[
-        InlineKeyboardButton(p, callback_data=f"pos:{p}") for p in POSITIONS
-    ]])
+    kb = InlineKeyboardMarkup([
+        [InlineKeyboardButton(p, callback_data=f"pos:{p}")] for p in POSITIONS
+    ])
     text = "Здравствуйте, пожалуйста выберете должность:"
     if update.message:
         await update.message.reply_text(text, reply_markup=kb)
