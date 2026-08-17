@@ -106,9 +106,9 @@ async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = f"Вопрос {idx + 1}/{TOTAL}:\n{q[0]}"
     if isinstance(q[1], tuple) and q[1][0] == "choice":
         opts = q[1][1]
-        kb = InlineKeyboardMarkup([[
-            InlineKeyboardButton(o, callback_data=f"ans:{i}") for i, o in enumerate(opts)
-        ]])
+        kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton(o, callback_data=f"ans:{i}")] for i, o in enumerate(opts)
+        ])
         context.user_data["await_choice"] = True
         await context.bot.send_message(chat_id, text, reply_markup=kb)
     else:
