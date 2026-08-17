@@ -241,9 +241,15 @@ async def bind_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 json.dump({"group_id": gid}, f)
         except Exception:
             pass
-        await update.message.reply_text("✅ Группа привязана к приёму заявок ZGS STAFF.")
+        await update.message.reply_text(
+            f"✅ Группа привязана к приёму заявок ZGS STAFF.\n"
+            f"ID группы: {gid}\n"
+            f"(чтобы привязка переживала редеплои, задай STAFF_GROUP_ID={gid} в окружении Render)"
+        )
     elif BOUND_GROUP_ID == gid:
-        await update.message.reply_text("✅ Эта группа уже привязана к приёму заявок.")
+        await update.message.reply_text(
+            f"✅ Эта группа уже привязана к приёму заявок.\nID группы: {gid}"
+        )
     else:
         await update.message.reply_text(
             "❌ Бот уже привязан к другой группе. Повторная привязка невозможна."
