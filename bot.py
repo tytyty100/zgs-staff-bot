@@ -173,6 +173,27 @@ def save_users(s):
 RECRUITMENT_OPEN = load_state()
 KNOWN_USERS = load_users()
 
+BLOCKED_FILE = os.path.join(BASE_DIR, "blocked.json")
+
+
+def load_blocked():
+    try:
+        with open(BLOCKED_FILE, encoding="utf-8") as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
+
+
+def save_blocked(s):
+    try:
+        with open(BLOCKED_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(s), f)
+    except Exception:
+        pass
+
+
+BLOCKED = load_blocked()
+
 
 async def broadcast(context, text):
     for uid in list(KNOWN_USERS):
@@ -241,6 +262,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if user:
         KNOWN_USERS.add(user.id)
         save_users(KNOWN_USERS)
+        if user.id in BLOCKED:
+            if update.message:
+                await update.message.reply_text("🚫 Вы заблокированы и не можете подать заявку.")
+            return ConversationHandler.END
     if not RECRUITMENT_OPEN:
         if update.message:
             await update.message.reply_text(
@@ -339,6 +364,13 @@ async def finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat_id = update.effective_chat.id
     user = update.effective_user
     pos = context.user_data["position"]
+    if user.id in BLOCKED:
+        try:
+            await context.bot.send_message(chat_id, "🚫 Вы заблокированы и не можете подать заявку.")
+        except Exception:
+            pass
+        context.user_data.clear()
+        return
     data = {
         "user_id": user.id,
         "username": user.username,
@@ -398,10 +430,22 @@ async def decision_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     try:
-        action, app_id = query.data.split(":", 1)
+        action, rest = query.data.split(":", 1)
     except Exception:
         return
-    app = PENDING.pop(app_id, None)
+    if action == "unban":
+        try:
+            uid = int(rest)
+        except Exception:
+            return
+        await unban_user(context, uid)
+        try:
+            await query.edit_message_text((query.message.text or "") + "\n\n✅ Разблокирован модератором")
+            await query.edit_message_reply_markup(reply_markup=None)
+        except Exception:
+            pass
+        return
+    app = PENDING.pop(rest, None)
     save_pending(PENDING)
     if app is None:
         try:
@@ -425,9 +469,19 @@ async def decision_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception:
             pass
         note = "❌ Отклонено модератором"
-    else:  # ban
+    elif action == "ban":
         await ban_user(context, user_id, pos)
         note = "🚫 Заблокирован модератором"
+        try:
+            await query.edit_message_text((query.message.text or "") + f"\n\n{note}")
+            await query.edit_message_reply_markup(
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("🔓 Разблокировать", callback_data=f"unban:{user_id}"),
+                ]])
+            )
+        except Exception:
+            pass
+        return
 
     try:
         await query.edit_message_text((query.message.text or "") + f"\n\n{note}")
@@ -449,8 +503,31 @@ async def ban_user(context: ContextTypes.DEFAULT_TYPE, user_id, pos):
             await context.bot.ban_chat_member(gid, user_id)
         except Exception as exc:
             logging.warning("ban failed in %s for %s: %s", gid, user_id, exc)
+    BLOCKED.add(user_id)
+    save_blocked(BLOCKED)
     try:
-        await context.bot.send_message(user_id, "🚫 Вы заблокированы.")
+        await context.bot.send_message(user_id, "🚫 Вы заблокированы и не можете подавать заявки.")
+    except Exception:
+        pass
+
+
+async def unban_user(context: ContextTypes.DEFAULT_TYPE, user_id):
+    BLOCKED.discard(user_id)
+    save_blocked(BLOCKED)
+    targets = []
+    for gkey in ("zrra", "tgk"):
+        gid = load_target(gkey)
+        if gid:
+            targets.append(gid)
+    if BOUND_GROUP_ID:
+        targets.append(BOUND_GROUP_ID)
+    for gid in dict.fromkeys(targets):
+        try:
+            await context.bot.unban_chat_member(gid, user_id, only_if_banned=True)
+        except Exception as exc:
+            logging.warning("unban failed in %s for %s: %s", gid, user_id, exc)
+    try:
+        await context.bot.send_message(user_id, "✅ Вы разблокированы, заявки снова принимаются.")
     except Exception:
         pass
 
@@ -680,7 +757,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)],
     )
     app.add_handler(conv)
-    app.add_handler(CallbackQueryHandler(decision_cb, pattern="^(accept|reject|ban):"))
+    app.add_handler(CallbackQueryHandler(decision_cb, pattern="^(accept|reject|ban|unban):"))
     app.add_handler(
         ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)
     )
