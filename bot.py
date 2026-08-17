@@ -24,6 +24,20 @@ try:
 except ValueError:
     STAFF_GROUP_ID = None
 
+BINDING_FILE = os.path.join(BASE_DIR, "staff_binding.json")
+
+
+def load_bound_group():
+    try:
+        with open(BINDING_FILE, encoding="utf-8") as f:
+            return json.load(f).get("group_id")
+    except Exception:
+        return None
+
+
+_b = load_bound_group()
+BOUND_GROUP_ID = _b if _b is not None else STAFF_GROUP_ID
+
 SELECT_POSITION, QUESTION = range(2)
 
 POSITIONS = [
@@ -194,10 +208,10 @@ async def finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = "\n".join(lines)
     await context.bot.send_message(chat_id, summary)
 
-    if STAFF_GROUP_ID:
+    if BOUND_GROUP_ID:
         try:
             await context.bot.send_message(
-                STAFF_GROUP_ID, "📥 Новая заявка в ZGS STAFF:\n" + summary
+                BOUND_GROUP_ID, "📥 Новая заявка в ZGS STAFF:\n" + summary
             )
         except Exception:
             pass
@@ -210,6 +224,30 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message:
         await update.message.reply_text("Заявка отменена. Чтобы начать заново — /start.")
     return ConversationHandler.END
+
+
+async def bind_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        if update.message:
+            await update.message.reply_text("Команду привязки можно использовать только в группе.")
+        return
+    gid = chat.id
+    global BOUND_GROUP_ID
+    if BOUND_GROUP_ID is None:
+        BOUND_GROUP_ID = gid
+        try:
+            with open(BINDING_FILE, "w", encoding="utf-8") as f:
+                json.dump({"group_id": gid}, f)
+        except Exception:
+            pass
+        await update.message.reply_text("✅ Группа привязана к приёму заявок ZGS STAFF.")
+    elif BOUND_GROUP_ID == gid:
+        await update.message.reply_text("✅ Эта группа уже привязана к приёму заявок.")
+    else:
+        await update.message.reply_text(
+            "❌ Бот уже привязан к другой группе. Повторная привязка невозможна."
+        )
 
 
 def main():
@@ -227,6 +265,10 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)],
     )
     app.add_handler(conv)
+    app.add_handler(CommandHandler("привязать", bind_cmd))
+    app.add_handler(
+        MessageHandler(filters.TEXT & filters.Regex(r"(?i)^!?\s*привязать$"), bind_cmd)
+    )
     logging.info("ZGS STAFF BOT запущен.")
     app.run_polling(drop_pending_updates=True, bootstrap_retries=30, close_loop=False)
 
