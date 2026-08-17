@@ -80,6 +80,14 @@ KEY_NAMES = {
     "tgk": "официальный ТГК (выдача прав/префикса, без ссылки)",
 }
 
+# Красивый префикс (админ-титул), выдаваемый при выдаче прав. Максимум 16 символов.
+TITLE_BY_POS = {
+    "МОДЕРАТОР ZRRA": "Модератор ZRRA",
+    "МОДЕРАТОР ТГК": "Модератор ТГК",
+    "МОДЕРАТОР ++": "Модератор++",
+    "ХЕЛПЕР / ПОМОЩНИК": "Хелпер",
+}
+
 # Права, которые бот выдаёт принятым (умеренный набор модератора)
 MOD_PERMISSIONS = dict(
     can_manage_chat=True,
@@ -409,7 +417,7 @@ async def try_promote(context, gid, user_id, title):
 async def accept_user(context: ContextTypes.DEFAULT_TYPE, user_id, pos, role_cfg):
     invite_key = role_cfg.get("invite")
     promote_groups = role_cfg.get("promote", [])
-    title = pos
+    title = TITLE_BY_POS.get(pos, pos)
 
     # Одноразовая ссылка-приглашение (если должность предполагает группу ЗРР)
     if invite_key:
