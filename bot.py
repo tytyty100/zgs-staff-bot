@@ -18,7 +18,11 @@ from config import TOKEN
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 APPLICATIONS_FILE = os.path.join(BASE_DIR, "applications.json")
-ADMIN_CHAT_ID = os.environ.get("ADMIN_CHAT_ID", "").strip()
+_staff_group_raw = os.environ.get("STAFF_GROUP_ID", "").strip()
+try:
+    STAFF_GROUP_ID = int(_staff_group_raw) if _staff_group_raw else None
+except ValueError:
+    STAFF_GROUP_ID = None
 
 SELECT_POSITION, QUESTION = range(2)
 
@@ -83,6 +87,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(text, reply_markup=kb)
     else:
         await update.callback_query.edit_message_text(text, reply_markup=kb)
+    chat = update.effective_chat
+    if chat and chat.type in ("group", "supergroup"):
+        logging.info(
+            "Bot is in group chat_id=%s — set STAFF_GROUP_ID to this value to receive applications there",
+            chat.id,
+        )
     return SELECT_POSITION
 
 
@@ -184,9 +194,11 @@ async def finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
     summary = "\n".join(lines)
     await context.bot.send_message(chat_id, summary)
 
-    if ADMIN_CHAT_ID:
+    if STAFF_GROUP_ID:
         try:
-            await context.bot.send_message(ADMIN_CHAT_ID, "📥 Новая заявка в ZGS STAFF:\n" + summary)
+            await context.bot.send_message(
+                STAFF_GROUP_ID, "📥 Новая заявка в ZGS STAFF:\n" + summary
+            )
         except Exception:
             pass
 
