@@ -134,6 +134,53 @@ def save_accepted(d):
 PENDING = load_pending()
 ACCEPTED = load_accepted()  # user_id -> {"gid": ..., "title": ...}
 
+STATE_FILE = os.path.join(BASE_DIR, "recruit_state.json")
+USERS_FILE = os.path.join(BASE_DIR, "users.json")
+
+
+def load_state():
+    try:
+        with open(STATE_FILE, encoding="utf-8") as f:
+            return bool(json.load(f).get("open", True))
+    except Exception:
+        return True
+
+
+def save_state(open_flag):
+    try:
+        with open(STATE_FILE, "w", encoding="utf-8") as f:
+            json.dump({"open": open_flag}, f)
+    except Exception:
+        pass
+
+
+def load_users():
+    try:
+        with open(USERS_FILE, encoding="utf-8") as f:
+            return set(json.load(f))
+    except Exception:
+        return set()
+
+
+def save_users(s):
+    try:
+        with open(USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(list(s), f)
+    except Exception:
+        pass
+
+
+RECRUITMENT_OPEN = load_state()
+KNOWN_USERS = load_users()
+
+
+async def broadcast(context, text):
+    for uid in list(KNOWN_USERS):
+        try:
+            await context.bot.send_message(uid, text)
+        except Exception:
+            pass
+
 
 SELECT_POSITION, QUESTION = range(2)
 
@@ -190,6 +237,16 @@ TOTAL = len(COMMON_QUESTIONS) + 5  # 10
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
+    user = update.effective_user
+    if user:
+        KNOWN_USERS.add(user.id)
+        save_users(KNOWN_USERS)
+    if not RECRUITMENT_OPEN:
+        if update.message:
+            await update.message.reply_text(
+                "🚫 Набор в ZGS STAFF окончен. Заявки временно не принимаются."
+            )
+        return ConversationHandler.END
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton(p, callback_data=f"pos:{p}")] for p in POSITIONS
     ])
@@ -491,6 +548,41 @@ async def on_chat_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
         save_accepted(ACCEPTED)
 
 
+async def set_open(context, open_flag, update, label):
+    global RECRUITMENT_OPEN
+    RECRUITMENT_OPEN = open_flag
+    save_state(open_flag)
+    if update.message:
+        try:
+            await update.message.reply_text(label)
+        except Exception:
+            pass
+    await broadcast(
+        context,
+        "🚫 Набор в ZGS STAFF окончен. Спасибо за интерес!"
+        if not open_flag else
+        "✅ Набор в ZGS STAFF снова открыт! Подавайте заявку через /start.",
+    )
+
+
+async def off_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        if update.message:
+            await update.message.reply_text("Команду можно использовать только в группе.")
+        return
+    await set_open(context, False, update, "🚫 Набор в ZGS STAFF окончен. Заявки больше не принимаются.")
+
+
+async def on_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    chat = update.effective_chat
+    if not chat or chat.type not in ("group", "supergroup"):
+        if update.message:
+            await update.message.reply_text("Команду можно использовать только в группе.")
+        return
+    await set_open(context, True, update, "✅ Набор в ZGS STAFF снова открыт! Заявки принимаются.")
+
+
 async def id_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     user = update.effective_user
@@ -594,6 +686,8 @@ def main():
     )
     app.add_handler(CommandHandler("bind", bind_cmd))
     app.add_handler(CommandHandler("id", id_cmd))
+    app.add_handler(CommandHandler("off", off_cmd))
+    app.add_handler(CommandHandler("on", on_cmd))
     app.add_handler(
         MessageHandler(filters.TEXT & filters.Regex(r"(?i)^!?\s*привязать(?:\s+\S+)?$"), bind_cmd)
     )
