@@ -265,7 +265,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)],
     )
     app.add_handler(conv)
-    app.add_handler(CommandHandler("привязать", bind_cmd))
+    app.add_handler(CommandHandler("bind", bind_cmd))
     app.add_handler(
         MessageHandler(filters.TEXT & filters.Regex(r"(?i)^!?\s*привязать$"), bind_cmd)
     )
