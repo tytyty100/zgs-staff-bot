@@ -313,13 +313,18 @@ async def finalize(update: Update, context: ContextTypes.DEFAULT_TYPE):
             for i, a in enumerate(data["answers"], 1):
                 group_lines.append(f"{i}. {a['q']}\n   ➜ {a['a']}")
             group_text = "\n".join(group_lines)
-            kb = InlineKeyboardMarkup([[
-                InlineKeyboardButton("✅ Принять", callback_data=f"accept:{app_id}"),
-                InlineKeyboardButton("❌ Отказать", callback_data=f"reject:{app_id}"),
-            ]])
+            kb = InlineKeyboardMarkup([
+                [
+                    InlineKeyboardButton("✅ Принять", callback_data=f"accept:{app_id}"),
+                    InlineKeyboardButton("❌ Отказать", callback_data=f"reject:{app_id}"),
+                ],
+                [
+                    InlineKeyboardButton("🚫 Заблокировать", callback_data=f"ban:{app_id}"),
+                ],
+            ])
             await context.bot.send_message(BOUND_GROUP_ID, group_text, reply_markup=kb)
         except Exception as exc:
-            logging.warning("Failed to forward application to group: %s", exc)
+            logging.exception("Failed to forward application to group: %s", exc)
 
     context.user_data.clear()
 
@@ -347,17 +352,40 @@ async def decision_cb(update: Update, context: ContextTypes.DEFAULT_TYPE):
     role_cfg = ROLE_CONFIG.get(pos, {"invite": None, "promote": []})
 
     if action == "accept":
-        note = await accept_user(context, user_id, pos, role_cfg)
-    else:
+        await accept_user(context, user_id, pos, role_cfg)
+        note = "✅ Принято модератором"
+    elif action == "reject":
         try:
             await context.bot.send_message(user_id, "❌ К сожалению, ваша заявка отклонена.")
         except Exception:
             pass
         note = "❌ Отклонено модератором"
+    else:  # ban
+        await ban_user(context, user_id, pos)
+        note = "🚫 Заблокирован модератором"
 
     try:
         await query.edit_message_text((query.message.text or "") + f"\n\n{note}")
         await query.edit_message_reply_markup(reply_markup=None)
+    except Exception:
+        pass
+
+
+async def ban_user(context: ContextTypes.DEFAULT_TYPE, user_id, pos):
+    targets = []
+    for gkey in ("zrra", "tgk"):
+        gid = load_target(gkey)
+        if gid:
+            targets.append(gid)
+    if BOUND_GROUP_ID:
+        targets.append(BOUND_GROUP_ID)
+    for gid in dict.fromkeys(targets):
+        try:
+            await context.bot.ban_chat_member(gid, user_id)
+        except Exception as exc:
+            logging.warning("ban failed in %s for %s: %s", gid, user_id, exc)
+    try:
+        await context.bot.send_message(user_id, "🚫 Вы заблокированы.")
     except Exception:
         pass
 
@@ -552,7 +580,7 @@ def main():
         fallbacks=[CommandHandler("cancel", cancel), CommandHandler("start", start)],
     )
     app.add_handler(conv)
-    app.add_handler(CallbackQueryHandler(decision_cb, pattern="^(accept|reject):"))
+    app.add_handler(CallbackQueryHandler(decision_cb, pattern="^(accept|reject|ban):"))
     app.add_handler(
         ChatMemberHandler(on_chat_member, ChatMemberHandler.ANY_CHAT_MEMBER)
     )
